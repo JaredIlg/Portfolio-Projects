@@ -1,5 +1,5 @@
 ---
-title: "BCG Assignment - Jared"
+title: "Payroll Analysis"
 author: "Jared Ilg"
 date: "2023-10-04"
 output: pdf_document
