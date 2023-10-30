@@ -1,0 +1,234 @@
+---
+title: "BCG Assignment - Jared"
+author: "Jared Ilg"
+date: "2023-10-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(lubridate)
+```
+
+
+```{r}
+setwd("C:/Users/jared/Downloads")
+df <- read.csv("BCG Assignment - Jared.csv")
+df <- df %>%
+  select(Employee.ID, Punch.Description, PunchDate, TimeIN, TimeOUT, Rounded.Hours)
+head(df)
+```
+
+
+```{r}
+# Find duplicate rows with the same values in all columns
+duplicate_rows <- df[duplicated(df) | duplicated(df, fromLast = TRUE), ]
+
+
+# Print the duplicate rows
+print("Duplicate Rows:")
+head(duplicate_rows)
+
+
+# Remove duplicates from the data frame
+df <- df %>%
+ distinct()
+head(df)
+```
+
+```{r}
+# Convert PunchDate column to a Date object
+df$PunchDate <- as.Date(df$PunchDate, format = "%m/%d/%Y")
+class(df$PunchDate)
+```
+```{r 1}
+# Extract the year from the PunchDate column and calculate the count of employees for each year
+employee_count_baseR <- table(format(df$PunchDate, "%Y"))
+
+#Print Results
+cat("Method 1:\n")
+print(employee_count_baseR)
+
+# Group the data by year and calculate the count of employees for each year
+employee_count_dplyr <- df %>%
+  group_by(Year = format(PunchDate, "%Y")) %>%
+  summarise(EmployeeCount = n())
+
+#Print Results
+cat("\nMethod 2:\n")
+print(employee_count_dplyr)
+```
+
+
+```{r 2}
+# Define the criteria for excluded workdays in function
+excluded_criteria <- function(description, rounded_hours) {
+  is_excluded_description <- description %in% c("HOLIDAY", "LUN", "Lunch", "Sick", "Vacation", "TMP1")
+  is_zero_hours <- rounded_hours == 0
+  return(is_excluded_description | is_zero_hours)
+}
+
+# Apply the criteria to the PunchDescription and RoundedHours columns to filter out excluded workdays using excluded_criteria function
+filtered_df <- df %>%
+  filter(!excluded_criteria(Punch.Description, Rounded.Hours))
+
+# Sum the WorkdayCount to get the total number of workdays for each employee
+total_workdays <- filtered_df %>%
+  group_by(Employee.ID) %>%
+  summarise(TotalWorkdays = n_distinct(PunchDate))
+
+
+# Print the results
+head(total_workdays)
+```
+
+
+```{r 3}
+# Apply the criteria to the PunchDescription and RoundedHours columns to filter out excluded workdates
+excluded_dates <- df %>%
+  filter(excluded_criteria(Punch.Description, Rounded.Hours))
+
+# Count the number of unique excluded PunchDates
+num_excluded_dates <- n_distinct(excluded_dates$PunchDate)
+
+# Print the count of excluded workdates
+cat("Number of excluded workdates:")
+print(num_excluded_dates)
+
+# Provide a brief explanation of the exclusion criteria
+cat("Excluded workdates were counted based on the following criteria:\n")
+cat("1. Punch.Description values HOLIDAY, LUN, Lunch, Sick, Vacation, and TMP1 are excluded.\n")
+cat("2. Workdates with Rounded.Hours equal to 0 are excluded.\n")
+```
+
+
+```{r 4}
+# Get the last recorded PunchDate in the dataset
+last_recorded_date <- max(filtered_df$PunchDate, na.rm = TRUE)
+
+# Define the present date
+present_date <- Sys.Date()  # Current system date
+
+# Calculate the number of workdays from the last recorded PunchDate to the present date
+workdays_since_last_recorded_date <- sum(!weekdays(seq(last_recorded_date, present_date, by = "days")) %in% c("Saturday", "Sunday"))
+
+# Print the results
+head(paste("Workdays since last recorded date:", workdays_since_last_recorded_date))
+```
+```{r 5}
+# Filter out rows with Punch.Description "LUN" or "Lunch"
+filtered_df_no_meal_break <- filtered_df %>%
+  filter(!Punch.Description %in% c("LUN", "Lunch"))
+
+# Calculate the total work hours for each employee on each day
+work_hours_per_day <- filtered_df_no_meal_break %>%
+  group_by(Employee.ID, PunchDate) %>%
+  summarise(TotalHours = sum(Rounded.Hours))
+
+# Filter days with total work hours over 5 hours
+filtered_work_hours_over_5 <- work_hours_per_day %>%
+  filter(TotalHours > 5)
+
+# Count the number of distinct workdays with over 5 hours per employee
+workdays_over_5_hours_no_meal_break <- filtered_work_hours_over_5 %>%
+  group_by(Employee.ID) %>%
+  summarise(CountWorkdaysOver5Hours = n())
+
+# Calculate the total count of workdays over 5 hours without a lunch break
+total_workdays_over_5_hours <- sum(workdays_over_5_hours_no_meal_break$CountWorkdaysOver5Hours)
+
+print("Total workdays over 5 hours without lunch break (across all employees):")
+head(total_workdays_over_5_hours)
+
+```
+```{r 6}
+
+# Calculate the minimum and maximum dates in the filtered dataset
+min_date <- min(df$PunchDate, na.rm = TRUE)
+max_date <- max(df$PunchDate, na.rm = TRUE)
+
+# Calculate the number of workweeks between the minimum and maximum dates
+num_workweeks <- floor((as.numeric(max_date - min_date) + 1) / 7)
+
+# Print the result
+print(paste("Number of workweeks in the data:", num_workweeks))
+```
+```{r 7}
+# Convert TimeIN and TimeOUT columns to POSIXct objects
+filtered_df$TimeIN <- as.POSIXct(filtered_df$TimeIN, format="%m/%d/%Y %H:%M")
+filtered_df$TimeOUT <- as.POSIXct(filtered_df$TimeOUT, format="%m/%d/%Y %H:%M")
+
+# Calculate the actual hours worked in minutes
+filtered_df$ActualMinutesWorked <- as.numeric(difftime(filtered_df$TimeOUT, filtered_df$TimeIN, units = "mins"))
+
+# Calculate the net difference in minutes
+filtered_df$NetDifferenceMinutes <- filtered_df$ActualMinutesWorked - (filtered_df$Rounded.Hours * 60)
+
+# Create a new data frame with the Difference column
+difference_df <- filtered_df %>%
+  select(Employee.ID, PunchDate, NetDifferenceMinutes)
+
+# Sum the NetDifferenceMinutes column to find the total difference
+total_difference_minutes <- sum(difference_df$NetDifferenceMinutes, na.rm = TRUE)
+
+# Convert the total difference to hours and minutes
+total_difference_hours <- floor(total_difference_minutes / 60)
+remaining_minutes <- total_difference_minutes %% 60
+
+# Print the result
+cat("Total Net Difference: ", total_difference_hours, " hours and ", remaining_minutes, " minutes\n")
+```
+```{r 8}
+
+# Extract the year from PunchDate and create a new column "Year"
+difference_df <- difference_df %>%
+  mutate(Year = as.integer(format(PunchDate, "%Y")))
+
+# Group by Year and EmployeeID, and calculate the average difference
+average_difference_by_year <- difference_df %>%
+  group_by(Year) %>%
+  summarise(AverageDifferenceMinutes = mean(NetDifferenceMinutes, na.rm = TRUE))
+
+# Group by EmployeeID and calculate the average difference
+average_difference_by_employee <- difference_df %>%
+  group_by(Employee.ID) %>%
+  summarise(AverageDifferenceMinutes = mean(NetDifferenceMinutes, na.rm = TRUE))
+
+# Convert the average differences to hours and minutes
+average_difference_by_year$AverageDifferenceHours <- floor(average_difference_by_year$AverageDifferenceMinutes / 60)
+average_difference_by_year$RemainingMinutes <- average_difference_by_year$AverageDifferenceMinutes %% 60
+
+average_difference_by_employee$AverageDifferenceHours <- floor(average_difference_by_employee$AverageDifferenceMinutes / 60)
+average_difference_by_employee$RemainingMinutes <- average_difference_by_employee$AverageDifferenceMinutes %% 60
+
+# Print the results
+print("Average Difference by Year:")
+print(average_difference_by_year)
+
+print("Average Difference by Employee:")
+print(average_difference_by_employee)
+
+# Sort average_difference_by_year from highest to lowest average difference
+average_difference_by_year <- average_difference_by_year %>%
+  arrange(desc(AverageDifferenceMinutes))
+
+# Sort average_difference_by_employee from highest to lowest average difference
+average_difference_by_employee <- average_difference_by_employee %>%
+  arrange(desc(AverageDifferenceMinutes))
+
+# Print the sorted dataframes
+print("Average Difference by Year (sorted):")
+print(average_difference_by_year)
+
+print("Average Difference by Employee (sorted):")
+print(average_difference_by_employee)
+```
+```{r 9}
+##Notes on Data Cleaning: Unnecessary columns were removed.
+##Duplicate rows were removed. 
+##PunchDate, TimeIN, and TimeOUT were converted to dates or datetimes. 
+##Rows with missing values were only removed as needed. 
+##No other data cleaning was done.
+```
+
